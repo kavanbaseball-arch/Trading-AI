@@ -22,6 +22,15 @@ try:
 except Exception:  # pragma: no cover
     httpx = None
 
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/csv,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 
 def _closes_from_yahoo_frame(data: pd.DataFrame, symbols: list[str]) -> pd.DataFrame:
     if data is None or data.empty:
@@ -34,6 +43,45 @@ def _closes_from_yahoo_frame(data: pd.DataFrame, symbols: list[str]) -> pd.DataF
     return closes.dropna(how="all")
 
 
+def series_from_yahoo_chart(payload: dict, symbol: str) -> pd.Series:
+    result = (payload or {}).get("chart", {}).get("result") or []
+    if not result:
+        raise RuntimeError("yahoo chart empty result")
+    block = result[0]
+    stamps = block.get("timestamp") or []
+    indicators = block.get("indicators") or {}
+    adj = (indicators.get("adjclose") or [{}])[0].get("adjclose")
+    raw = (indicators.get("quote") or [{}])[0].get("close")
+    closes = adj or raw
+    if not stamps or not closes:
+        raise RuntimeError("yahoo chart missing closes")
+    idx = pd.to_datetime(stamps, unit="s", utc=True).tz_convert(None)
+    series = pd.Series(closes, index=idx, name=symbol, dtype="float64").dropna()
+    if series.empty:
+        raise RuntimeError("yahoo chart all-NaN closes")
+    return series
+
+
+def series_from_stooq_csv(text: str, symbol: str) -> pd.Series:
+    if "<html" in text[:200].lower() or "verify your browser" in text.lower():
+        raise RuntimeError("stooq returned a browser-challenge page")
+    df = pd.read_csv(StringIO(text))
+    if df.empty:
+        raise RuntimeError("stooq csv empty")
+    renamed = {c.strip().lower(): c for c in df.columns}
+    date_col = renamed.get("date") or renamed.get("data")
+    close_col = renamed.get("close") or renamed.get("zamkniecie") or renamed.get("zamknięcie")
+    if not date_col or not close_col:
+        raise RuntimeError(f"stooq unexpected columns {list(df.columns)}")
+    dates = pd.to_datetime(df[date_col], errors="coerce")
+    closes = pd.to_numeric(df[close_col], errors="coerce")
+    series = pd.Series(closes.values, index=dates, name=symbol).dropna()
+    series = series[~series.index.isna()].sort_index()
+    if series.empty:
+        raise RuntimeError("stooq parsed empty series")
+    return series.tail(280)
+
+
 class MarketData:
     """Daily history + last prices. Yahoo with backoff, Stooq fallback, Alpaca if keyed."""
 
@@ -42,7 +90,6 @@ class MarketData:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._history: pd.DataFrame | None = None
         self._last_prices: dict[str, float] = {}
-        self._yahoo_disabled = False
         self._alpaca = None
         if settings.alpaca_api_key and settings.alpaca_api_secret and StockHistoricalDataClient:
             self._alpaca = StockHistoricalDataClient(
@@ -75,6 +122,21 @@ class MarketData:
             encoding="utf-8",
         )
 
+    def _http_get(self, url: str) -> str:
+        if httpx is None:
+            raise RuntimeError("httpx is required")
+        resp = httpx.get(url, timeout=20.0, headers=BROWSER_HEADERS, follow_redirects=True)
+        resp.raise_for_status()
+        return resp.text
+
+    def _yahoo_chart(self, symbol: str, range_spec: str = "1y") -> pd.Series:
+        url = (
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+            f"?range={range_spec}&interval=1d&includeAdjustedClose=true"
+        )
+        payload = json.loads(self._http_get(url))
+        return series_from_yahoo_chart(payload, symbol)
+
     def _yahoo_one(self, symbol: str, period: str) -> pd.Series:
         data = yf.download(
             symbol,
@@ -94,26 +156,24 @@ class MarketData:
 
     def _stooq_one(self, symbol: str) -> pd.Series:
         url = f"https://stooq.com/q/d/l/?s={symbol.lower()}.us&i=d"
-        if httpx is not None:
-            resp = httpx.get(url, timeout=20.0, headers={"User-Agent": "PairTradingTester/1.0"})
-            resp.raise_for_status()
-            df = pd.read_csv(StringIO(resp.text), parse_dates=["Date"])
-        else:
-            df = pd.read_csv(url, parse_dates=["Date"])
-        if "Close" not in df.columns or df.empty:
-            raise RuntimeError(f"Stooq empty for {symbol}")
-        series = df.set_index("Date")["Close"].dropna().sort_index()
-        series.name = symbol
-        return series.tail(280)
+        text = self._http_get(url) if httpx is not None else pd.read_csv(url).to_csv(index=False)
+        return series_from_stooq_csv(text, symbol)
 
     def _fetch_one(self, symbol: str, period: str = "1y") -> pd.Series:
-        if not self._yahoo_disabled:
-            try:
-                return self._yahoo_one(symbol, period)
-            except Exception as yahoo_exc:
-                self._yahoo_disabled = True
-                print(f"[warn] Yahoo blocked ({yahoo_exc}); remaining symbols use Stooq", flush=True)
-        return self._stooq_one(symbol)
+        errors: list[str] = []
+        try:
+            return self._yahoo_chart(symbol, "1y" if period == "1y" else "2y")
+        except Exception as exc:
+            errors.append(f"chart:{exc}")
+        try:
+            return self._yahoo_one(symbol, period)
+        except Exception as exc:
+            errors.append(f"yfinance:{exc}")
+        try:
+            return self._stooq_one(symbol)
+        except Exception as exc:
+            errors.append(f"stooq:{exc}")
+        raise RuntimeError(f"No history for {symbol} ({'; '.join(errors)})")
 
     def load_history(self, symbols: list[str] | None = None, period: str = "1y") -> pd.DataFrame:
         symbols = symbols or all_symbols()
@@ -134,7 +194,7 @@ class MarketData:
                 frames = [merged]
             except Exception as exc:
                 print(f"[warn] skipping {symbol}: {exc}", flush=True)
-            time.sleep(0.5)
+            time.sleep(0.25)
         if not frames:
             raise RuntimeError("No daily history from Yahoo or Stooq")
         closes = frames[0]

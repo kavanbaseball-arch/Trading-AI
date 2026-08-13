@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pair Trading Tester</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #08090c;
+      --panel: #10131a;
+      --panel-2: #161b25;
+      --line: #232a38;
+      --text: #e8edf7;
+      --mute: #8b93a7;
+      --bid: #3ee0a2;
+      --ask: #ff6b8a;
+      --amber: #e7c36a;
+      --blue: #7aa2ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: var(--bg); color: var(--text); font-family: "IBM Plex Sans", sans-serif; min-height: 100%; }
+    body {
+      background-image:
+        radial-gradient(1200px 500px at 10% -10%, rgba(62, 224, 162, 0.08), transparent 50%),
+        radial-gradient(900px 400px at 100% 0%, rgba(122, 162, 255, 0.07), transparent 45%);
+    }
+    header {
+      display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+      padding: 22px 28px 16px; border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; flex-direction: column; gap: 4px; }
+    .brand small { color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase; font-size: 11px; font-family: "IBM Plex Mono", monospace; }
+    .brand h1 { font-family: Newsreader, Georgia, serif; font-size: 32px; font-weight: 500; letter-spacing: -0.03em; }
+    .stats { display: flex; gap: 28px; font-family: "IBM Plex Mono", monospace; }
+    .stat { display: flex; flex-direction: column; gap: 3px; }
+    .stat span { color: var(--mute); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; }
+    .stat b { font-size: 18px; font-weight: 500; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--mute); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ask); }
+    .dot.on { background: var(--bid); box-shadow: 0 0 8px var(--bid); }
+    main { display: grid; grid-template-columns: 1.4fr 0.9fr; gap: 16px; padding: 16px 28px 28px; }
+    .panel { background: rgba(16, 19, 26, 0.92); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .panel h2 { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mute); padding: 14px 16px 0; font-weight: 500; }
+    .sectors { padding: 10px 12px 16px; display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 140px); overflow: auto; }
+    .sector h3 { font-size: 13px; color: var(--blue); margin: 0 4px 8px; font-weight: 500; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+    .card {
+      background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+      cursor: pointer; min-height: 92px;
+    }
+    .card:hover { border-color: #3a4560; }
+    .card.off { opacity: 0.45; }
+    .card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .card .id { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+    .z { font-family: "IBM Plex Mono", monospace; font-size: 16px; }
+    .z.pos { color: var(--ask); }
+    .z.neg { color: var(--bid); }
+    .meta { color: var(--mute); font-size: 11px; margin-top: 6px; font-family: "IBM Plex Mono", monospace; }
+    .bar { height: 4px; background: #1c2230; border-radius: 99px; margin-top: 10px; overflow: hidden; }
+    .bar i { display: block; height: 100%; border-radius: 99px; }
+    .side { display: flex; flex-direction: column; gap: 16px; }
+    .log { height: 220px; overflow: auto; padding: 8px 16px 16px; font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.55; color: #c9d0de; }
+    .log .warn { color: var(--amber); }
+    .log .error { color: var(--ask); }
+    .positions { padding: 8px 16px 16px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; color: var(--mute); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 0; }
+    td { padding: 7px 0; border-top: 1px solid var(--line); font-family: "IBM Plex Mono", monospace; font-size: 12px; }
+    .chat { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+    .chatbox { min-height: 72px; max-height: 160px; overflow: auto; background: #0c0f15; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 13px; white-space: pre-wrap; color: #d5dbe8; }
+    form { display: flex; gap: 8px; }
+    input {
+      flex: 1; background: #0c0f15; border: 1px solid var(--line); color: var(--text);
+      border-radius: 10px; padding: 10px 12px; font-family: inherit;
+    }
+    button {
+      background: var(--text); color: #0b0d12; border: 0; border-radius: 10px; padding: 10px 14px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .ghost { background: transparent; color: var(--mute); border: 1px solid var(--line); }
+    .actions { display: flex; gap: 8px; padding: 0 16px 12px; }
+    canvas { width: 100%; height: 84px; display: block; }
+    .detail {
+      display: none; padding: 12px 16px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--mute);
+    }
+    .detail.on { display: block; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } .sectors { max-height: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <small>AI-operated NYSE pairs book</small>
+      <h1>Pair Trading Tester</h1>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Equity</span><b id="equity">—</b></div>
+      <div class="stat"><span>Cash</span><b id="cash">—</b></div>
+      <div class="stat"><span>Gross</span><b id="gross">—</b></div>
+      <div class="stat"><span>Open pairs</span><b id="nopen">0</b></div>
+    </div>
+    <div class="pill"><span class="dot" id="dot"></span><span id="session">connecting</span></div>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Universe · z-score of cointegrated spread</h2>
+      <div class="sectors" id="sectors"></div>
+    </section>
+    <div class="side">
+      <section class="panel">
+        <h2>Mark-to-market</h2>
+        <canvas id="curve" height="84"></canvas>
+        <div class="positions" id="positions">No open pair trades.</div>
+        <div class="actions">
+          <button class="ghost" id="cycle">Force cycle</button>
+          <button class="ghost" id="flatten">Flatten book</button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>AI operator</h2>
+        <div class="log" id="log"></div>
+        <div class="chat">
+          <div class="chatbox" id="chatbox">Ask about a quote, a pair, or the book. Example: quote NVDA · AAPL-MSFT · positions</div>
+          <form id="form">
+            <input id="prompt" placeholder="Talk to the operator…" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+        <div class="detail" id="detail"></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    const money = (n) => n == null || Number.isNaN(n) ? "—" : n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    const fmtZ = (z) => (z == null || Number.isNaN(z) ? "—" : (z >= 0 ? "+" : "") + z.toFixed(2));
+    let lastState = null;
+
+    function zColor(z) {
+      if (z == null || Number.isNaN(z)) return "#3a4560";
+      const t = Math.max(-3, Math.min(3, z)) / 3;
+      if (t >= 0) return `rgba(255, 107, 138, ${0.35 + 0.65 * t})`;
+      return `rgba(62, 224, 162, ${0.35 + 0.65 * -t})`;
+    }
+
+    function drawCurve(points) {
+      const canvas = document.getElementById("curve");
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = 84 * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, canvas.clientWidth, 84);
+      if (!points || points.length < 2) return;
+      const vals = points.map(p => p.equity);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const span = max - min || 1;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = (i / (points.length - 1)) * canvas.clientWidth;
+        const y = 74 - ((p.equity - min) / span) * 60;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.strokeStyle = "#3ee0a2";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+
+    function render(s) {
+      lastState = s;
+      const acct = s.account || {};
+      document.getElementById("equity").textContent = money(acct.equity);
+      document.getElementById("cash").textContent = money(acct.cash);
+      document.getElementById("gross").textContent = money(acct.gross_exposure);
+      const open = s.pair_positions || {};
+      document.getElementById("nopen").textContent = Object.keys(open).length;
+      const sess = s.session || {};
+      document.getElementById("session").textContent = (sess.phase || "unknown") + (s.running ? " · operator live" : " · paused");
+      document.getElementById("dot").className = "dot" + (sess.is_open ? " on" : "");
+
+      const bySector = {};
+      (s.pairs || []).forEach(p => {
+        const sec = p.sector || "Other";
+        (bySector[sec] ||= []).push(p);
+      });
+      const root = document.getElementById("sectors");
+      root.innerHTML = Object.entries(bySector).map(([sec, pairs]) => `
+        <div class="sector">
+          <h3>${sec}</h3>
+          <div class="grid">${pairs.map(card).join("")}</div>
+        </div>`).join("");
+
+      const posEl = document.getElementById("positions");
+      const rows = Object.values(open);
+      posEl.innerHTML = rows.length ? `<table><thead><tr><th>Pair</th><th>Side</th><th>A</th><th>B</th><th>Entry z</th></tr></thead><tbody>
+        ${rows.map(p => `<tr><td>${p.pair_id}</td><td>${p.side}</td><td>${Number(p.shares_a).toFixed(2)}</td><td>${Number(p.shares_b).toFixed(2)}</td><td>${fmtZ(p.entry_z)}</td></tr>`).join("")}
+      </tbody></table>` : "No open pair trades.";
+
+      const logs = (s.logs || []).slice().reverse();
+      document.getElementById("log").innerHTML = logs.map(l =>
+        `<div class="${l.level}">${(l.ts || "").slice(11, 19)}  ${l.message}</div>`
+      ).join("") || "<div>Waiting for operator cycle…</div>";
+      drawCurve(s.equity_curve || []);
+    }
+
+    function card(p) {
+      const z = p.zscore;
+      const width = Math.min(100, Math.abs(z || 0) / 4 * 100);
+      const cls = p.active === false || p.tradable === false ? "card off" : "card";
+      const zcls = z > 0 ? "pos" : z < 0 ? "neg" : "";
+      const coint = p.is_cointegrated ? "coint" : "no-coint";
+      return `<div class="${cls}" data-id="${p.pair_id}">
+        <div class="row"><span class="id">${p.pair_id}</span><span class="z ${zcls}">${fmtZ(z)}</span></div>
+        <div class="meta">${p.symbol_a}/${p.symbol_b} · ${coint}${p.adf_pvalue != null ? " · p=" + Number(p.adf_pvalue).toFixed(3) : ""}${p.notes ? " · " + p.notes : ""}</div>
+        <div class="bar"><i style="width:${width}%;background:${zColor(z)}"></i></div>
+      </div>`;
+    }
+
+    async function refresh() {
+      const r = await fetch("/api/state");
+      render(await r.json());
+    }
+
+    document.getElementById("sectors").addEventListener("click", (e) => {
+      const cardEl = e.target.closest("[data-id]");
+      if (!cardEl || !lastState) return;
+      const p = (lastState.pairs || []).find(x => x.pair_id === cardEl.dataset.id);
+      const d = document.getElementById("detail");
+      d.className = "detail on";
+      if (!p) return;
+      d.textContent = p.notes || `${p.name_a} vs ${p.name_b}
+β=${p.beta != null ? Number(p.beta).toFixed(3) : "—"}  α=${p.alpha != null ? Number(p.alpha).toFixed(3) : "—"}
+ADF p=${p.adf_pvalue != null ? Number(p.adf_pvalue).toFixed(4) : "—"}  EG p=${p.engle_granger_pvalue != null ? Number(p.engle_granger_pvalue).toFixed(4) : "—"}
+spread=${p.spread != null ? Number(p.spread).toFixed(3) : "—"}  last ${p.price_a} / ${p.price_b}`;
+    });
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("prompt");
+      const message = input.value.trim();
+      if (!message) return;
+      const box = document.getElementById("chatbox");
+      box.textContent = "Thinking…";
+      input.value = "";
+      const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
+      const j = await r.json();
+      box.textContent = j.reply;
+    });
+
+    document.getElementById("cycle").onclick = async () => { await fetch("/api/engine/cycle", { method: "POST" }); refresh(); };
+    document.getElementById("flatten").onclick = async () => {
+      if (!confirm("Flatten all pair legs?")) return;
+      await fetch("/api/engine/flatten", { method: "POST" });
+      refresh();
+    };
+
+    refresh();
+    setInterval(refresh, 4000);
+  </script>
+</body>
+</html>

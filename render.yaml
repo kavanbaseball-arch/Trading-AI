@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pair-trading-tester
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.4"
+      - key: ACCOUNT_NAME
+        value: Pair Trading Tester
+      - key: BROKER
+        value: sim
+      - key: STARTING_CASH
+        value: "100000"

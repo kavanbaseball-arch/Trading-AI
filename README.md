@@ -57,6 +57,22 @@ cd backend
 pytest
 ```
 
+## Deploy
+
+Do **not** host this on Vercel. Vercel is for serverless/frontend apps. Pair Trading Tester is a long-running FastAPI process (the AI operator loop). Importing this GitHub repo into Vercel produces a **404** because there is no Next.js app or static build to serve.
+
+The `npx plugins add vercel/vercel-plugin` line Vercel shows is a **Cursor/Claude plugin installer**, not a deploy command. In Cursor, install it with `/add-plugin vercel` if you want Vercel docs in chat. It will not make this Python bot run on Vercel.
+
+Use [Render](https://render.com) (or any always-on Python host):
+
+1. New → Web Service → connect `kavanbaseball-arch/Trading-AI`
+2. Root directory: `backend`
+3. Build: `pip install -r requirements.txt`
+4. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. Health check: `/api/health`
+
+Or from this repo: **New → Blueprint** and select `render.yaml`. First boot can take a minute while price history downloads.
+
 ## Alpaca paper (real NYSE routing)
 
 1. Create a paper account at [Alpaca](https://alpaca.markets/).

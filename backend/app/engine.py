@@ -31,6 +31,7 @@ class TradingEngine:
         self._lock = threading.Lock()
 
     def log(self, message: str, level: str = "info") -> None:
+        print(f"[{level}] {message}", flush=True)
         self.store.add_log(message, level)
 
     def mark_to_market(self, prices: dict[str, float]) -> dict:
@@ -249,12 +250,17 @@ class TradingEngine:
                         actions.append({"pair_id": pair.id, "action": signal.action, "reason": signal.reason})
 
             account = self.mark_to_market(prices)
+            slim_pairs = [
+                {k: v for k, v in row.items() if k not in ("spread_series", "z_series")}
+                for row in analyses
+            ]
             snapshot = {
                 "session": session,
                 "account": account,
-                "pairs": analyses,
+                "pairs": slim_pairs,
                 "pair_positions": self.store.pair_positions(),
                 "actions": actions,
+                "loading": False,
                 "ts": datetime.now(timezone.utc).isoformat(),
             }
             self.last_cycle = snapshot
@@ -262,6 +268,7 @@ class TradingEngine:
 
     def _loop(self) -> None:
         self.log(f"AI operator online for account '{settings.account_name}'")
+        time.sleep(3)
         while self.running:
             try:
                 self.cycle()

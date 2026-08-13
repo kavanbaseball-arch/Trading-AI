@@ -181,7 +181,11 @@
       document.getElementById("dot").className = "dot" + (sess.is_open ? " on" : "");
 
       const bySector = {};
-      (s.pairs || []).forEach(p => {
+      const pairRows = (s.pairs && s.pairs.length) ? s.pairs : (s.universe_meta || []).map(p => ({
+        pair_id: p.id, sector: p.sector, symbol_a: p.symbol_a, symbol_b: p.symbol_b,
+        name_a: p.name_a, name_b: p.name_b, active: p.active, notes: p.notes, zscore: null
+      }));
+      pairRows.forEach(p => {
         const sec = p.sector || "Other";
         (bySector[sec] ||= []).push(p);
       });
@@ -219,8 +223,14 @@
     }
 
     async function refresh() {
-      const r = await fetch("/api/state");
-      render(await r.json());
+      try {
+        const r = await fetch("/api/state");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        render(await r.json());
+      } catch (err) {
+        document.getElementById("session").textContent = "waiting for operator…";
+        document.getElementById("log").innerHTML = `<div class="warn">${err}</div>`;
+      }
     }
 
     document.getElementById("sectors").addEventListener("click", (e) => {

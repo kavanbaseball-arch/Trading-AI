@@ -33,7 +33,7 @@ class MarketData:
                 settings.alpaca_api_secret,
             )
 
-    def load_history(self, symbols: list[str] | None = None, period: str = "2y") -> pd.DataFrame:
+    def load_history(self, symbols: list[str] | None = None, period: str = "1y") -> pd.DataFrame:
         symbols = symbols or all_symbols()
         cache_path = self.cache_dir / "daily_closes.pkl"
         meta_path = self.cache_dir / "daily_meta.json"
@@ -45,20 +45,31 @@ class MarketData:
                 self._history = hist
                 return hist
 
-        data = yf.download(
-            symbols,
-            period=period,
-            auto_adjust=True,
-            progress=False,
-            threads=True,
-            group_by="column",
-        )
-        if isinstance(data.columns, pd.MultiIndex):
-            closes = data["Close"].copy()
-        else:
-            closes = data[["Close"]].copy()
-            closes.columns = symbols[:1]
-        closes = closes.dropna(how="all")
+        frames: list[pd.DataFrame] = []
+        batch_size = 10
+        for i in range(0, len(symbols), batch_size):
+            chunk = symbols[i : i + batch_size]
+            print(f"[info] downloading history {i + 1}-{i + len(chunk)}/{len(symbols)}", flush=True)
+            data = yf.download(
+                chunk,
+                period=period,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+                group_by="column",
+            )
+            if data is None or data.empty:
+                continue
+            if isinstance(data.columns, pd.MultiIndex):
+                closes = data["Close"].copy()
+            else:
+                closes = data[["Close"]].copy()
+                closes.columns = chunk[:1]
+            frames.append(closes)
+            time.sleep(0.3)
+        if not frames:
+            raise RuntimeError("Yahoo returned no daily history")
+        closes = pd.concat(frames, axis=1).dropna(how="all")
         closes.to_pickle(cache_path)
         meta_path.write_text(
             json.dumps({"ts": now, "symbols": list(closes.columns)}),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from app.config import settings
 from app.engine import engine
 from app.universe import PAIRS
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -25,6 +28,7 @@ class ChatIn(BaseModel):
 def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        logging.info("Pair Trading Tester listening")
         engine.log("API online — starting AI operator")
         engine.start()
         yield
@@ -39,17 +43,25 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/api/health")
-    def health():
+    async def health():
         return {"ok": True, "account": settings.account_name}
 
-    @app.get("/api/state")
-    def state():
-        if engine.last_cycle is None:
-            try:
-                engine.cycle()
-            except Exception as exc:
-                return {"error": str(exc), "session": market_session()}
-        cycle = engine.last_cycle or {}
+    def _state_payload() -> dict:
+        cycle = engine.last_cycle or {
+            "session": market_session(),
+            "account": {
+                "name": settings.account_name,
+                "broker": settings.broker,
+                "cash": engine.broker.cash(),
+                "equity": engine.broker.cash(),
+                "gross_exposure": 0,
+                "positions": [],
+            },
+            "pairs": [],
+            "pair_positions": engine.store.pair_positions(),
+            "actions": [],
+            "loading": True,
+        }
         return {
             **cycle,
             "logs": engine.store.recent_logs(80),
@@ -69,6 +81,7 @@ def create_app() -> FastAPI:
                 for p in PAIRS
             ],
             "running": engine.running,
+            "loading": cycle.get("loading", engine.last_cycle is None),
             "config": {
                 "z_entry": settings.z_entry,
                 "z_stop": settings.z_stop,
@@ -79,6 +92,10 @@ def create_app() -> FastAPI:
                 "max_open_pairs": settings.max_open_pairs,
             },
         }
+
+    @app.get("/api/state")
+    async def state():
+        return _state_payload()
 
     @app.get("/api/quote/{symbol}")
     def quote(symbol: str):
